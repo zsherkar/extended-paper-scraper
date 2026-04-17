@@ -16,3 +16,8 @@ web/public/data/
 
 # Survey outputs
 outputs/
+
+# Personal research artifacts / local scrape history
+master_literature.csv
+refresh_master_corpus.py
+scripts/extract_recursive_self_improvement.py
