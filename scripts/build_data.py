@@ -37,8 +37,15 @@ VENUE_NAMES = {
 }
 
 
+def is_conference_dataset_id(conf_id: str) -> bool:
+    prefix, sep, year = conf_id.rpartition("_")
+    return bool(prefix and sep and year.isdigit())
+
+
 def parse_conference_id(conf_id: str) -> tuple[str, int]:
     """Extract venue display name and year from conference ID like 'iclr_2025'."""
+    if not is_conference_dataset_id(conf_id):
+        raise ValueError(f"Unsupported conference dataset ID: {conf_id}")
     year = int(conf_id.rsplit("_", 1)[1])
     prefix = conf_id.rsplit("_", 1)[0]
     venue = VENUE_NAMES.get(prefix, prefix.upper())
@@ -275,6 +282,8 @@ def build_all(data_dir: Path, out_dir: Path) -> None:
         if not conf_dir.is_dir():
             continue
         conf_id = conf_dir.name
+        if not is_conference_dataset_id(conf_id):
+            continue
         papers = load_papers(conf_dir)
         if not papers:
             continue

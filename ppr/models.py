@@ -20,6 +20,11 @@ class Paper:
     open_access_pdf: str = ""
     external_ids: dict = field(default_factory=dict)
     match_status: str = ""
+    source_id: str = ""
+    source_name: str = ""
+    source_type: str = ""
+    source_category: str = ""
+    source_url: str = ""
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -47,4 +52,9 @@ class Paper:
             open_access_pdf=data.get("open_access_pdf", ""),
             external_ids=data.get("external_ids", {}),
             match_status=data.get("match_status", ""),
+            source_id=data.get("source_id", ""),
+            source_name=data.get("source_name", ""),
+            source_type=data.get("source_type", ""),
+            source_category=data.get("source_category", ""),
+            source_url=data.get("source_url", ""),
         )

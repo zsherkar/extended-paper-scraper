@@ -10,6 +10,20 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from ppr.scrapers import SCRAPERS
+from ppr.scrapers.arxiv import (
+    ARXIV_SOURCE_GROUPS,
+    ARXIV_SOURCES,
+    DEFAULT_ARXIV_SOURCE_IDS,
+    ensure_arxiv_access_allowed,
+)
+from ppr.scrapers.public_web import DEFAULT_PUBLIC_SOURCE_IDS, PUBLIC_SOURCE_GROUPS, PUBLIC_WEB_SOURCES
+from ppr.scrapers.dblp import (
+    DBLP_HISTORY_VENUES,
+    discover_dblp_years,
+    is_dblp_history_conf_id,
+    scrape_dblp_conference_id,
+    scrape_dblp_venue_history,
+)
 from ppr.api_client import OpenReviewAPIClient, create_openreview_client, create_openreview_v1_client
 from ppr.citations import CitationFetcher
 from ppr.config import CrawlConfig
@@ -24,10 +38,49 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+SOURCE_GROUPS = {
+    **PUBLIC_SOURCE_GROUPS,
+    **ARXIV_SOURCE_GROUPS,
+}
+DIRECT_SOURCE_IDS = set(PUBLIC_WEB_SOURCES) | set(ARXIV_SOURCES)
+DEFAULT_SOURCE_IDS = [*DEFAULT_PUBLIC_SOURCE_IDS, *DEFAULT_ARXIV_SOURCE_IDS]
+SOURCE_GROUPS["default_sources"] = tuple(DEFAULT_SOURCE_IDS)
 
-def _available_conferences() -> list[str]:
+
+def _available_targets() -> list[str]:
     from_configs = {p.stem for p in CONFIGS_DIR.glob("*.yaml")}
-    return sorted(from_configs | SCRAPERS.keys())
+    source_groups = set(SOURCE_GROUPS)
+    return sorted(from_configs | SCRAPERS.keys() | source_groups)
+
+
+def _dedupe_targets(targets: list[str]) -> list[str]:
+    return list(dict.fromkeys(targets))
+
+
+def _resolve_crawl_targets(
+    targets: list[str],
+    *,
+    include_default_public_sources: bool,
+) -> list[str]:
+    expanded: list[str] = []
+    for target in targets:
+        if target in SOURCE_GROUPS:
+            expanded.extend(SOURCE_GROUPS[target])
+        else:
+            expanded.append(target)
+    expanded = _dedupe_targets(expanded)
+
+    if not include_default_public_sources:
+        return expanded
+    if not expanded:
+        return list(DEFAULT_SOURCE_IDS)
+
+    # Explicit source-only calls should stay narrow; conference-oriented crawls
+    # append the reviewed default source bundle automatically.
+    if all(target in DIRECT_SOURCE_IDS for target in expanded):
+        return expanded
+
+    return _dedupe_targets([*expanded, *DEFAULT_SOURCE_IDS])
 
 
 def _resolve_input(conf_id: str) -> Path:
@@ -64,19 +117,62 @@ def _add_auth_args(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ppr",
-        description="Crawl accepted papers from OpenReview conferences.",
+        description="Crawl conference papers plus approved arXiv, AI lab, and researcher writing sources.",
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # crawl
     crawl_parser = subparsers.add_parser(
-        "crawl", help="Fetch accepted papers (e.g., ppr crawl iclr_2025 neurips_2025)"
+        "crawl", help="Fetch conference papers plus approved default sources (e.g., ppr crawl iclr_2025 neurips_2025)"
     )
     crawl_parser.add_argument(
-        "conferences", nargs="+",
-        help="Conference IDs (e.g., iclr_2025 neurips_2025).",
+        "conferences", nargs="*",
+        help=(
+            "Conference IDs, public-source IDs, or source bundles "
+            "(e.g., iclr_2025 openai_newsroom frontier_labs arxiv_recent). "
+            "If omitted, crawl the default source bundle."
+        ),
+    )
+    crawl_parser.add_argument(
+        "--no-default-public-sources",
+        "--no-default-sources",
+        action="store_true",
+        help="Do not append the default source bundle (frontier labs, AI writers, and approved arXiv feeds).",
     )
     _add_auth_args(crawl_parser)
+
+    # dblp-history
+    dblp_history_parser = subparsers.add_parser(
+        "dblp-history",
+        help="Scrape a DBLP venue range (e.g., ppr dblp-history ijcai --start-year 2000 --end-year 2025)",
+    )
+    dblp_history_parser.add_argument(
+        "venue",
+        choices=sorted(DBLP_HISTORY_VENUES),
+        help="DBLP venue slug.",
+    )
+    dblp_history_parser.add_argument("--start-year", type=int, help="First year to scrape.")
+    dblp_history_parser.add_argument("--end-year", type=int, help="Last year to scrape.")
+    dblp_history_parser.add_argument(
+        "--fallback-search",
+        action="store_true",
+        help="Use DBLP publication search only for requested years without discovered proceedings.",
+    )
+    dblp_history_parser.add_argument(
+        "--max-results-per-year",
+        type=int,
+        default=100,
+        help="Fallback publication-search cap per missing year (default: 100).",
+    )
+    dblp_history_parser.add_argument(
+        "--output-id",
+        help="Output dataset ID under data/ (default: <venue>_<start>_<end>).",
+    )
+    dblp_history_parser.add_argument(
+        "--list-years",
+        action="store_true",
+        help="Print discovered DBLP proceedings years and exit.",
+    )
 
     # enrich
     enrich_parser = subparsers.add_parser(
@@ -112,23 +208,41 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def cmd_crawl(args: argparse.Namespace) -> None:
-    conf_ids = args.conferences
+    conf_ids = _resolve_crawl_targets(
+        args.conferences,
+        include_default_public_sources=not args.no_default_public_sources,
+    )
+    if not conf_ids:
+        raise ValueError("No crawl targets selected.")
+    ensure_arxiv_access_allowed(conf_ids)
 
     # Split into scraped vs OpenReview conferences
     scraped = [c for c in conf_ids if c in SCRAPERS]
-    openreview = [c for c in conf_ids if c not in SCRAPERS and (CONFIGS_DIR / f"{c}.yaml").exists()]
-    unknown = [c for c in conf_ids if c not in scraped and c not in openreview]
+    dblp_dynamic = [
+        c for c in conf_ids
+        if c not in SCRAPERS and is_dblp_history_conf_id(c)
+    ]
+    openreview = [
+        c for c in conf_ids
+        if c not in SCRAPERS and c not in dblp_dynamic and (CONFIGS_DIR / f"{c}.yaml").exists()
+    ]
+    unknown = [c for c in conf_ids if c not in scraped and c not in dblp_dynamic and c not in openreview]
 
     if unknown:
-        available = _available_conferences()
+        available = _available_targets()
         raise FileNotFoundError(
-            f"Unknown conference(s): {', '.join(unknown)}. "
+            f"Unknown crawl target(s): {', '.join(unknown)}. "
             f"Available: {', '.join(available)}"
         )
 
     # Scrape non-OpenReview conferences (no login needed)
     for conf_id in scraped:
         papers = SCRAPERS[conf_id]()
+        save_path = _save_papers(papers, conf_id)
+        logger.info("Done: %s (%d papers) -> %s", conf_id, len(papers), save_path)
+
+    for conf_id in dblp_dynamic:
+        papers = scrape_dblp_conference_id(conf_id)
         save_path = _save_papers(papers, conf_id)
         logger.info("Done: %s (%d papers) -> %s", conf_id, len(papers), save_path)
 
@@ -211,6 +325,30 @@ def cmd_enrich(args: argparse.Namespace) -> None:
         _enrich_one(conf_id, fetcher)
 
 
+def cmd_dblp_history(args: argparse.Namespace) -> None:
+    years = discover_dblp_years(args.venue)
+    if not years:
+        raise RuntimeError(f"No DBLP proceedings years discovered for {args.venue}")
+
+    if args.list_years:
+        print(f"{args.venue}: {', '.join(str(y) for y in years)}")
+        return
+
+    start_year = args.start_year if args.start_year is not None else min(years)
+    end_year = args.end_year if args.end_year is not None else max(years)
+    output_id = args.output_id or f"{args.venue}_{start_year}_{end_year}"
+
+    papers = scrape_dblp_venue_history(
+        args.venue,
+        start_year=start_year,
+        end_year=end_year,
+        max_results_per_year=args.max_results_per_year,
+        fallback_to_search=args.fallback_search,
+    )
+    save_path = _save_papers(papers, output_id)
+    logger.info("Done: %s %s-%s (%d papers) -> %s", args.venue, start_year, end_year, len(papers), save_path)
+
+
 def cmd_validate(args: argparse.Namespace) -> None:
     from ppr.validate import validate_conference
 
@@ -240,6 +378,7 @@ def main() -> None:
 
     commands = {
         "crawl": cmd_crawl,
+        "dblp-history": cmd_dblp_history,
         "enrich": cmd_enrich,
         "validate": cmd_validate,
     }

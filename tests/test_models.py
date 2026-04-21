@@ -128,3 +128,26 @@ class TestPaper:
         assert paper.fields_of_study == ["CS", "Math"]
         assert paper.open_access_pdf == "https://example.com/paper.pdf"
         assert paper.external_ids == {"DOI": "10.1234"}
+
+    def test_source_fields_round_trip(self):
+        paper = Paper(
+            title="T",
+            link="L",
+            authors=["A"],
+            source_id="openai_newsroom",
+            source_name="OpenAI Newsroom",
+            source_type="frontier_lab",
+            source_category="lab_news",
+            source_url="https://openai.com/newsroom/",
+        )
+
+        data = paper.to_dict()
+        assert data["source_id"] == "openai_newsroom"
+        assert data["source_name"] == "OpenAI Newsroom"
+        assert data["source_type"] == "frontier_lab"
+        assert data["source_category"] == "lab_news"
+        assert data["source_url"] == "https://openai.com/newsroom/"
+
+        restored = Paper.from_dict(data)
+        assert restored.source_id == "openai_newsroom"
+        assert restored.source_name == "OpenAI Newsroom"

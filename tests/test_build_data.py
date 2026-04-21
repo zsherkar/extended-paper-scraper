@@ -7,6 +7,7 @@ import pytest
 
 from scripts.build_data import (
     parse_conference_id,
+    is_conference_dataset_id,
     load_papers,
     build_manifest_entry,
     build_author_index,
@@ -71,6 +72,10 @@ def sample_outputs(tmp_path):
 
 
 class TestParseConferenceId:
+    def test_detects_conference_dataset_ids(self):
+        assert is_conference_dataset_id("iclr_2025") is True
+        assert is_conference_dataset_id("openai_newsroom") is False
+
     def test_iclr(self):
         assert parse_conference_id("iclr_2025") == ("ICLR", 2025)
 
@@ -127,6 +132,12 @@ class TestParseConferenceId:
 
     def test_coling(self):
         assert parse_conference_id("coling_2024") == ("COLING", 2024)
+
+    def test_rejects_non_conference_dataset_ids(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="Unsupported conference dataset ID"):
+            parse_conference_id("openai_newsroom")
 
 
 class TestLoadPapers:
@@ -279,3 +290,17 @@ class TestBuildAll:
 
         iclr_data = json.loads((out_dir / "iclr_2025.json").read_text())
         assert len(iclr_data) == 3
+
+    def test_skips_non_conference_datasets(self, sample_outputs, tmp_path):
+        source_dir = sample_outputs / "openai_newsroom"
+        source_dir.mkdir()
+        with open(source_dir / "papers.jsonl", "w") as f:
+            f.write(json.dumps({"title": "A post", "authors": ["OpenAI"]}) + "\n")
+
+        out_dir = tmp_path / "web_data"
+        build_all(sample_outputs, out_dir)
+
+        manifest = json.loads((out_dir / "manifest.json").read_text())
+        ids = [entry["id"] for entry in manifest["conferences"]]
+        assert "openai_newsroom" not in ids
+        assert not (out_dir / "openai_newsroom.json").exists()

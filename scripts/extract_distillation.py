@@ -835,6 +835,8 @@ def extract(data_dir: Path, min_score: int, master_csv: Path | None = None) -> t
             continue
 
         venue, year = _parse_conf_id(conf_id)
+        if not year:
+            venue = str(paper.get("source_name") or venue)
         authors = paper.get("authors", [])
         if isinstance(authors, list):
             authors_text = "; ".join(str(a) for a in authors)

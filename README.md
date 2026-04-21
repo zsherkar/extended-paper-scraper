@@ -6,9 +6,66 @@
 [![GitHub last commit](https://img.shields.io/github/last-commit/brightjade/paper-explorer)](https://github.com/brightjade/paper-explorer/commits/main)
 [![Sponsor](https://img.shields.io/badge/sponsor-brightjade-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/brightjade)
 
-Retrieve accepted paper metadata from ML/DL/NLP/CV/Robotics/Security/SE conferences. Uses the OpenReview API, web scraping, CVF Open Access, and the DBLP API.
+Retrieve accepted paper metadata from ML/DL/NLP/CV/Robotics/Security/SE conferences, plus curated public AI sources and approved recent arXiv feeds.
 
-## Getting Started
+## Quick Start For Non-Technical Users
+
+If you just want to run the scraper on Windows and do not care about the codebase internals, do this:
+
+1. Install `uv`. Open PowerShell and run:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+2. Get the project onto your computer. The easiest option is to download the repo ZIP from GitHub and extract it. If you are comfortable with git, you can also run:
+
+```powershell
+git clone https://github.com/zsherkar/extended-paper-scraper.git
+cd extended-paper-scraper
+```
+
+3. Open PowerShell inside the project folder and install everything:
+
+```powershell
+uv sync
+```
+
+4. Run one of these commands:
+
+```powershell
+# Pull the default source pipeline
+uv run ppr crawl
+
+# Pull one conference plus the default source pipeline
+uv run ppr crawl iclr_2025
+
+# Pull only conference data
+uv run ppr crawl iclr_2025 --no-default-sources
+```
+
+5. Find the downloaded data in `data/`. Spreadsheet-style outputs created by the literature scripts show up in `outputs/`.
+
+Important notes:
+
+- `uv run ppr crawl` now pulls the default source bundle automatically. That includes frontier-lab blogs/news, researcher/writer feeds, and reviewed recent arXiv feeds.
+- OpenReview credentials are only needed for OpenReview venues like ICLR, NeurIPS, ICML, COLM, and CoRL. Public web sources, DBLP venues, RSS, and the approved arXiv feeds do not require a login.
+- If you want a prebuilt data snapshot from GitHub Releases, you can still run `./setup.sh`.
+
+## What This Customized Version Adds
+
+This repo now includes several additions beyond the original conference-only workflow:
+
+- A default source pipeline that appends frontier AI lab blogs/news and widely read AI researcher/writer feeds to conference crawls, so operators do not need to remember extra source flags every time.
+- An approved arXiv default pipeline using the official API for recent `cs.AI`, `cs.LG`, `cs.CL`, `cs.CV`, `cs.RO`, `cs.NE`, and `stat.ML` feeds.
+- Hard arXiv guardrails: unreviewed `arxiv_*` targets are blocked before any request is sent, approved sources use the `export.arxiv.org` API host, the code enforces pacing, and recent results are cached locally to reduce repeated traffic.
+- Historical DBLP backfill support for venues like IJCAI, RSS, ICRA, IROS, ICSE, FSE, ASE, and ISSTA.
+- Downstream handling for yearless source datasets so the extraction/export pipeline can use public-source and arXiv data without breaking the conference-focused web build.
+- Broader literature-mining and spreadsheet export workflows, including the distillation/model-extraction database exporter and Google-Sheets-ready output bundle.
+
+## Detailed Setup
+
+If you want the fuller setup flow, use the steps below.
 
 ### 1. Install uv
 
@@ -27,8 +84,8 @@ After installing, restart your terminal so the `uv` command is available.
 ### 2. Clone and install dependencies
 
 ```bash
-git clone https://github.com/brightjade/paper-explorer.git
-cd paper-explorer
+git clone https://github.com/zsherkar/extended-paper-scraper.git
+cd extended-paper-scraper
 uv sync
 ```
 
@@ -63,12 +120,39 @@ cp .env.example .env
 
 ```bash
 # Crawl one or more conferences
+# Default behavior also appends the built-in source bundle
+# (frontier lab blogs/news, AI researcher/writer feeds, and reviewed arXiv feeds).
 uv run ppr crawl iclr_2025
 uv run ppr crawl iclr_2025 neurips_2025 icml_2025
+uv run ppr crawl ijcai_2000
+
+# Refresh just the default source bundle
+uv run ppr crawl
+
+# Crawl specific source bundles or source IDs
+uv run ppr crawl frontier_labs
+uv run ppr crawl ai_people
+uv run ppr crawl openai_newsroom anthropic_news
+uv run ppr crawl arxiv_recent
+uv run ppr crawl arxiv_cs_ai_recent arxiv_cs_lg_recent
+
+# Opt out of the default bundle when you want conference-only crawl output
+uv run ppr crawl iclr_2025 --no-default-sources
 
 # Enrich with citation counts and abstracts
 uv run ppr enrich iclr_2025
 uv run ppr enrich iclr_2025 neurips_2025 icml_2025
+
+# Scrape a DBLP venue range using discovered proceedings years
+uv run ppr dblp-history ijcai --start-year 2000 --end-year 2025
+uv run ppr dblp-history fse --list-years
+
+# Extract distillation-related papers from local data
+uv run python scripts/extract_distillation.py
+
+# Build a filterable distillation paper database + Google Sheets bundle
+uv run python scripts/export_distillation_database.py
+uv run python scripts/export_distillation_database.py --sync-google-sheet --google-credentials path/to/service-account.json
 
 # Validate paper counts against DBLP
 uv run ppr validate iclr_2025
@@ -77,6 +161,12 @@ uv run ppr validate iclr_2025 neurips_2025 --tolerance 0.15
 # Build static JSON for web app
 ./build.sh
 ```
+
+The distillation extractor scans `data/` plus `master_literature.csv` when present and writes CSV, JSONL, Markdown, and Excel outputs under `outputs/distillation_candidates.*`. The Excel workbook includes focused sheets for LLM, non-LLM, attacks, black-box attacks, defenses, data/synthetic methods, compression, policy, techniques, web sources, and the query taxonomy.
+
+The database exporter builds a more spreadsheet-friendly output under `outputs/distillation_paper_database.*` with sortable columns such as title, venue, year, citations, score, matched groups, and filter booleans (`is_llm`, `is_attack`, `is_defense`, etc.). It also writes a Google Sheets import bundle under `outputs/distillation_paper_database_google_sheet/` and can sync directly to a shared sheet when given a Google service account key.
+
+The default source bundle writes recent source data into yearless dataset folders under `data/` such as `data/openai_newsroom/`, `data/lilian_weng/`, and `data/arxiv_cs_ai_recent/`. The extraction/export scripts scan those automatically; the conference-focused web build skips them so the dashboard remains venue/year based.
 
 ## Available conferences
 
@@ -137,6 +227,36 @@ NeurIPS also includes `datasets_oral`, `datasets_spotlight`, `datasets_poster` t
 | FSE | main | main | main |
 | ASE | main | main | main |
 | ISSTA | main | main | main |
+
+DBLP-backed venues can also be scraped historically with `ppr dblp-history <venue> --start-year <year> --end-year <year>`. Supported DBLP venue slugs are `icse`, `fse`, `ase`, `issta`, `icra`, `iros`, `rss`, and `ijcai`.
+
+## Default Source Pipeline
+
+`ppr crawl` now includes a built-in source pipeline so operators do not need to remember extra flags each run. The current default bundle includes:
+
+- Frontier labs and research orgs: OpenAI, Anthropic, Mistral AI, Google AI Blog, Google Research Blog, Meta AI, Hugging Face, NVIDIA, AI2, Sakana AI, Together AI
+- Researchers and widely read writers: Lilian Weng, Chip Huyen, Jay Alammar, Sebastian Raschka, Simon Willison, Hamel Husain, Ethan Mollick, Nathan Lambert, Latent Space, The Gradient, Jack Clark
+- Reviewed arXiv recent feeds: `arxiv_cs_ai_recent`, `arxiv_cs_lg_recent`, `arxiv_cs_cl_recent`, `arxiv_cs_cv_recent`, `arxiv_cs_ro_recent`, `arxiv_cs_ne_recent`, `arxiv_stat_ml_recent`
+
+Use the bundle aliases `frontier_labs`, `ai_people`, `arxiv_recent`, `preprint_sources`, `default_public_sources`, or `default_sources` if you want to target those groups directly.
+
+## arXiv API Guardrails
+
+This repo now includes a dedicated arXiv policy layer in `ppr/scrapers/arxiv.py`. The approved built-in arXiv feeds above are allowed; unreviewed `arxiv` / `arxiv_*` targets are still blocked before any request is sent. The arXiv integration follows these rules:
+
+- Only reviewed built-in arXiv source IDs are allowed. Unknown `arxiv_*` targets are blocked before any request is sent.
+- Use the dedicated `export.arxiv.org` API host rather than scraping `arxiv.org` pages directly.
+- Keep arXiv API traffic to one request every 3 seconds and a single connection at a time.
+- Keep query slices at `max_results <= 2000` and within the API's `start + max_results <= 30000` window.
+- Cache approved arXiv responses on disk, so repeated crawls reuse recent results instead of repeatedly hitting the API.
+- Treat arXiv as a metadata source first. Link users to arXiv abstract pages instead of mirroring PDFs or source files from this repo.
+- Use the API for topic-scoped, near-real-time retrieval. Reserve OAI-PMH or other bulk mirrors for separate backfill jobs, not the default crawl path.
+
+Primary references:
+
+- arXiv API Terms of Use: https://info.arxiv.org/help/api/tou.html
+- arXiv API User Manual: https://info.arxiv.org/help/api/user-manual.html
+- arXiv Bulk Data Access: https://info.arxiv.org/help/bulk_data.html
 
 ## Literature Survey (Claude Code skill)
 
