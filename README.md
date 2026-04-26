@@ -8,6 +8,8 @@
 
 Retrieve accepted paper metadata from ML/DL/NLP/CV/Robotics/Security/SE conferences. This customized version preserves the original paper-explorer workflow while adding default source pipelines for frontier-lab blogs/news, AI researcher feeds, approved recent arXiv feeds, historical DBLP backfill, and spreadsheet-oriented literature export.
 
+This repository remains MIT licensed. The original `paper-explorer` work is copyright Minseok Choi, and the custom extensions added in this fork are copyright Ziauddin Sherkar.
+
 ## Getting Started
 
 ### 1. Install uv
