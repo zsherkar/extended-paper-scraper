@@ -1,4 +1,4 @@
-# paper-explorer
+# extender paper retriever
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-3776ab?logo=python&logoColor=white)](https://www.python.org/)
@@ -6,66 +6,9 @@
 [![GitHub last commit](https://img.shields.io/github/last-commit/brightjade/paper-explorer)](https://github.com/brightjade/paper-explorer/commits/main)
 [![Sponsor](https://img.shields.io/badge/sponsor-brightjade-ea4aaa?logo=github-sponsors)](https://github.com/sponsors/brightjade)
 
-Retrieve accepted paper metadata from ML/DL/NLP/CV/Robotics/Security/SE conferences, plus curated public AI sources and approved recent arXiv feeds.
+Retrieve accepted paper metadata from ML/DL/NLP/CV/Robotics/Security/SE conferences. This customized version preserves the original paper-explorer workflow while adding default source pipelines for frontier-lab blogs/news, AI researcher feeds, approved recent arXiv feeds, historical DBLP backfill, and spreadsheet-oriented literature export.
 
-## Quick Start For Non-Technical Users
-
-If you just want to run the scraper on Windows and do not care about the codebase internals, do this:
-
-1. Install `uv`. Open PowerShell and run:
-
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-2. Get the project onto your computer. The easiest option is to download the repo ZIP from GitHub and extract it. If you are comfortable with git, you can also run:
-
-```powershell
-git clone https://github.com/zsherkar/extended-paper-scraper.git
-cd extended-paper-scraper
-```
-
-3. Open PowerShell inside the project folder and install everything:
-
-```powershell
-uv sync
-```
-
-4. Run one of these commands:
-
-```powershell
-# Pull the default source pipeline
-uv run ppr crawl
-
-# Pull one conference plus the default source pipeline
-uv run ppr crawl iclr_2025
-
-# Pull only conference data
-uv run ppr crawl iclr_2025 --no-default-sources
-```
-
-5. Find the downloaded data in `data/`. Spreadsheet-style outputs created by the literature scripts show up in `outputs/`.
-
-Important notes:
-
-- `uv run ppr crawl` now pulls the default source bundle automatically. That includes frontier-lab blogs/news, researcher/writer feeds, and reviewed recent arXiv feeds.
-- OpenReview credentials are only needed for OpenReview venues like ICLR, NeurIPS, ICML, COLM, and CoRL. Public web sources, DBLP venues, RSS, and the approved arXiv feeds do not require a login.
-- If you want a prebuilt data snapshot from GitHub Releases, you can still run `./setup.sh`.
-
-## What This Customized Version Adds
-
-This repo now includes several additions beyond the original conference-only workflow:
-
-- A default source pipeline that appends frontier AI lab blogs/news and widely read AI researcher/writer feeds to conference crawls, so operators do not need to remember extra source flags every time.
-- An approved arXiv default pipeline using the official API for recent `cs.AI`, `cs.LG`, `cs.CL`, `cs.CV`, `cs.RO`, `cs.NE`, and `stat.ML` feeds.
-- Hard arXiv guardrails: unreviewed `arxiv_*` targets are blocked before any request is sent, approved sources use the `export.arxiv.org` API host, the code enforces pacing, and recent results are cached locally to reduce repeated traffic.
-- Historical DBLP backfill support for venues like IJCAI, RSS, ICRA, IROS, ICSE, FSE, ASE, and ISSTA.
-- Downstream handling for yearless source datasets so the extraction/export pipeline can use public-source and arXiv data without breaking the conference-focused web build.
-- Broader literature-mining and spreadsheet export workflows, including the distillation/model-extraction database exporter and Google-Sheets-ready output bundle.
-
-## Detailed Setup
-
-If you want the fuller setup flow, use the steps below.
+## Getting Started
 
 ### 1. Install uv
 
@@ -115,6 +58,17 @@ cp .env.example .env
 ```
 
 3. Edit `.env` with your OpenReview username and password.
+
+## Custom Additions In This Version
+
+This repo now includes several additions beyond the original conference-only workflow:
+
+- A default source pipeline that appends frontier AI lab blogs/news and widely read AI researcher/writer feeds to conference crawls, so operators do not need to remember extra source flags every time.
+- An approved arXiv default pipeline using the official API for recent `cs.AI`, `cs.LG`, `cs.CL`, `cs.CV`, `cs.RO`, `cs.NE`, and `stat.ML` feeds.
+- Hard arXiv guardrails: unreviewed `arxiv_*` targets are blocked before any request is sent, approved sources use the `export.arxiv.org` API host, the code enforces pacing, and recent results are cached locally to reduce repeated traffic.
+- Historical DBLP backfill support for venues like IJCAI, RSS, ICRA, IROS, ICSE, FSE, ASE, and ISSTA.
+- Downstream handling for yearless source datasets so the extraction/export pipeline can use public-source and arXiv data without breaking the conference-focused web build.
+- Broader literature-mining and spreadsheet export workflows, including the distillation/model-extraction database exporter and Google-Sheets-ready output bundle.
 
 ## Usage
 
